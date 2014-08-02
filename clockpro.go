@@ -7,8 +7,9 @@ Slides describing the algorithm: http://fr.slideshare.net/huliang64/clockpro
 
 The original paper: http://static.usenix.org/event/usenix05/tech/general/full_papers/jiang/jiang_html/html.html
 
-This version  uses a linked-list instead of an array to make the inserts and
-deletes O(1) instead of O(n) as in the original python implementation.
+This version  uses a circular-linked-list instead of an array to make the
+inserts and deletes O(1) instead of O(n) as in the original python
+implementation.  It also simplifies the bookkeeping considerably.
 
 It is MIT licensed, like the original.
 */
