@@ -19,11 +19,6 @@ import (
 	"fmt"
 )
 
-type cacheEntry struct {
-	ref bool
-	val interface{}
-}
-
 type pageType int
 
 const (
@@ -49,6 +44,8 @@ func (p pageType) String() string {
 type metaEntry struct {
 	ptype pageType
 	key   string
+	val   interface{}
+	ref   bool
 }
 
 // TODO(dgryski): combine data and metaKeys map
@@ -58,7 +55,6 @@ type metaEntry struct {
 type Cache struct {
 	mem_max  int
 	mem_cold int
-	data     map[string]*cacheEntry
 	meta     *list.List
 	metaKeys map[string]*list.Element
 
@@ -79,7 +75,6 @@ func New(size int) *Cache {
 	return &Cache{
 		mem_max:  size,
 		mem_cold: size,
-		data:     make(map[string]*cacheEntry),
 		metaKeys: make(map[string]*list.Element),
 		meta:     list.New(),
 	}
@@ -88,12 +83,20 @@ func New(size int) *Cache {
 
 func (c *Cache) Get(key string) interface{} {
 
-	if v, ok := c.data[key]; ok && v != nil {
-		v.ref = true
-		return v.val
+	v := c.metaKeys[key]
+
+	if v == nil {
+		return nil
 	}
 
-	return nil
+	val := v.Value.(*metaEntry)
+
+	if val.val == nil {
+		return nil
+	}
+
+	val.ref = true
+	return val.val
 }
 
 var DEBUG = false
@@ -112,50 +115,52 @@ func (c *Cache) Set(key string, value interface{}) {
 	//	c.FullDump()
 	defer TRACE("set")()
 
-	if v, ok := c.data[key]; ok {
-		if v == nil {
+	v := c.metaKeys[key]
+
+	if v != nil {
+
+		val := v.Value.(*metaEntry)
+
+		if val.val == nil {
 			if c.mem_cold < c.mem_max {
 				c.mem_cold++
 			}
-			c.meta_del(key)
-			c.data[key] = &cacheEntry{ref: false, val: value}
+			val.ref = false
+			val.val = value
+			val.ptype = ptHot
 			c.count_test--
-			c.meta_add(ptHot, key)
+			c.meta_del(val.key)
+			c.meta_add(val)
 			c.count_hot++
 		} else {
-			v.val = value
-			v.ref = true
+			val.val = value
+			val.ref = true
 		}
 	} else {
-		c.data[key] = &cacheEntry{ref: false, val: value}
-		c.meta_add(ptCold, key)
+		e := &metaEntry{ref: false, val: value, ptype: ptCold, key: key}
+		c.meta_add(e)
 		c.count_cold++
 	}
 
 	c.VerifyIdxs()
 }
 
-func (c *Cache) meta_add(ptype pageType, key string) {
+func (c *Cache) meta_add(mentry *metaEntry) {
 
 	defer TRACE("meta_add")()
 
 	c.evict()
 
-	mentry := &metaEntry{
-		ptype: ptype,
-		key:   key,
-	}
-
 	if c.hand_pos_hot == nil {
 		// first element
 		elt := c.meta.PushFront(mentry)
-		c.metaKeys[key] = elt
+		c.metaKeys[mentry.key] = elt
 		c.hand_pos_hot = elt
 		c.hand_pos_cold = elt
 		c.hand_pos_test = elt
 	} else {
 		c.VerifyIdxs()
-		c.metaKeys[key] = c.meta.InsertBefore(mentry, c.hand_pos_hot)
+		c.metaKeys[mentry.key] = c.meta.InsertBefore(mentry, c.hand_pos_hot)
 
 		if c.hand_idx_cold >= c.hand_idx_hot {
 			c.hand_pos_cold = c.hand_pos_cold.Prev()
@@ -289,16 +294,15 @@ func (c *Cache) hand_cold() {
 	meta := c.hand_pos_cold.Value.(*metaEntry)
 
 	if meta.ptype == ptCold {
-		data := c.data[meta.key]
 
-		if data.ref {
+		if meta.ref {
 			meta.ptype = ptHot
-			data.ref = false
+			meta.ref = false
 			c.count_cold--
 			c.count_hot++
 		} else {
 			meta.ptype = ptTest
-			c.data[meta.key] = nil
+			meta.val = nil
 			c.count_cold--
 			c.count_test++
 			for c.mem_max < c.count_test {
@@ -330,10 +334,9 @@ func (c *Cache) hand_hot() {
 	meta := c.hand_pos_hot.Value.(*metaEntry)
 
 	if meta.ptype == ptHot {
-		data := c.data[meta.key]
 
-		if data.ref {
-			data.ref = false
+		if meta.ref {
+			meta.ref = false
 		} else {
 			meta.ptype = ptCold
 			c.count_hot--
@@ -360,8 +363,6 @@ func (c *Cache) hand_test() {
 	meta := c.hand_pos_test.Value.(*metaEntry)
 
 	if meta.ptype == ptTest {
-
-		delete(c.data, meta.key)
 
 		prev := c.hand_pos_test.Prev()
 		pidx := c.hand_idx_test - 1
@@ -413,21 +414,17 @@ func (c *Cache) Dump() {
 
 		switch m.ptype {
 		case ptHot:
-			if c.data[m.key].ref {
+			if m.ref {
 				b = append(b, 'H')
 			} else {
 
 				b = append(b, 'h')
 			}
 		case ptCold:
-			if v, ok := c.data[m.key]; ok && v != nil {
-				if v.ref {
-					b = append(b, 'C')
-				} else {
-					b = append(b, 'c')
-				}
+			if m.ref {
+				b = append(b, 'C')
 			} else {
-				panic("no cached key for cold data " + m.key)
+				b = append(b, 'c')
 			}
 		case ptTest:
 			b = append(b, 'n')
