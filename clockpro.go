@@ -90,22 +90,7 @@ func (c *Cache) Get(key string) interface{} {
 	return val.val
 }
 
-var DEBUG = false
-
-func TRACE(what string) func() {
-	if !DEBUG {
-		return func() {}
-	}
-	fmt.Println("enter: ", what)
-	return func() {
-		fmt.Println("leave: ", what)
-	}
-}
-
 func (c *Cache) Set(key string, value interface{}) {
-	//	c.FullDump()
-	defer TRACE("set")()
-
 	v := c.metaKeys[key]
 
 	if v != nil {
@@ -136,8 +121,6 @@ func (c *Cache) Set(key string, value interface{}) {
 
 func (c *Cache) meta_add(mentry *metaEntry) {
 
-	defer TRACE("meta_add")()
-
 	c.evict()
 
 	if c.meta == nil {
@@ -160,8 +143,6 @@ func (c *Cache) meta_add(mentry *metaEntry) {
 }
 
 func (c *Cache) meta_del(key string) {
-
-	defer TRACE("meta_del")()
 
 	elt, ok := c.metaKeys[key]
 
@@ -188,16 +169,12 @@ func (c *Cache) meta_del(key string) {
 
 func (c *Cache) evict() {
 
-	defer TRACE("evict")()
-
 	for c.mem_max <= c.count_hot+c.count_cold {
 		c.hand_cold()
 	}
 }
 
 func (c *Cache) hand_cold() {
-
-	defer TRACE("hand_cold")()
 
 	meta := c.hand_pos_cold.Value.(*metaEntry)
 
@@ -228,8 +205,6 @@ func (c *Cache) hand_cold() {
 
 func (c *Cache) hand_hot() {
 
-	defer TRACE("hand_hot")()
-
 	if c.hand_pos_hot == c.hand_pos_test {
 		c.hand_test()
 	}
@@ -251,8 +226,6 @@ func (c *Cache) hand_hot() {
 }
 
 func (c *Cache) hand_test() {
-
-	defer TRACE("hand_test")()
 
 	if c.hand_pos_test == c.hand_pos_cold {
 		c.hand_cold()
@@ -276,10 +249,6 @@ func (c *Cache) hand_test() {
 }
 
 func (c *Cache) Dump() {
-
-	if !DEBUG {
-		return
-	}
 
 	var b []byte
 
@@ -321,45 +290,4 @@ func (c *Cache) Dump() {
 	}
 
 	fmt.Println(string(b))
-}
-
-func (c *Cache) FullDump() {
-	/*
-
-		var keys []string
-		for k := range c.data {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		fmt.Println("-data-")
-		for _, k := range keys {
-			if c.data[k] == nil {
-				fmt.Println("k=", k, "v=", c.data[k])
-			} else {
-				fmt.Printf("k=%s v=%+v\n", k, *(c.data[k]))
-			}
-		}
-
-	*/
-
-	fmt.Println("-list-")
-	var idx int
-	for elt := c.meta; elt != c.meta; elt = elt.Next() {
-		m := elt.Value.(*metaEntry)
-
-		if elt == c.hand_pos_hot {
-			fmt.Println("HOT pos")
-		}
-		if elt == c.hand_pos_cold {
-			fmt.Println("COLD pos")
-		}
-		if elt == c.hand_pos_test {
-			fmt.Println("TEST pos")
-		}
-
-		fmt.Printf("%+v\n", m)
-		idx++
-	}
 }
