@@ -248,7 +248,7 @@ func (c *Cache) hand_test() {
 	c.hand_pos_test = c.hand_pos_test.Next()
 }
 
-func (c *Cache) Dump() {
+func (c *Cache) dump() {
 
 	var b []byte
 
