@@ -107,8 +107,8 @@ func (c *Cache) Set(key string, value interface{}) {
 			val.val = value
 			val.ptype = ptHot
 			c.count_test--
-			c.meta_del(val.key)
-			c.meta_add(val)
+			c.meta_del(v)
+			c.meta_add(key, v)
 			c.count_hot++
 		} else {
 			val.val = value
@@ -116,26 +116,23 @@ func (c *Cache) Set(key string, value interface{}) {
 		}
 	} else {
 		e := &entry{ref: false, val: value, ptype: ptCold, key: key}
-		c.meta_add(e)
+		c.meta_add(key, &ring.Ring{Value: e})
 		c.count_cold++
 	}
 }
 
-func (c *Cache) meta_add(mentry *entry) {
+func (c *Cache) meta_add(key string, elt *ring.Ring) {
 
 	c.evict()
 
+	c.keys[key] = elt
 	if c.data == nil {
 		// first element
-		elt := &ring.Ring{Value: mentry}
 		c.data = elt
-		c.keys[mentry.key] = elt
 		c.hand_hot = elt
 		c.hand_cold = elt
 		c.hand_test = elt
 	} else {
-		elt := &ring.Ring{Value: mentry}
-		c.keys[mentry.key] = elt
 		elt.Link(c.hand_hot)
 
 		if c.hand_cold == c.hand_hot {
@@ -144,9 +141,11 @@ func (c *Cache) meta_add(mentry *entry) {
 	}
 }
 
-func (c *Cache) meta_del(key string) {
+func (c *Cache) meta_del(elt *ring.Ring) {
 
-	elt, ok := c.keys[key]
+	key := elt.Value.(*entry).key
+
+	_, ok := c.keys[key]
 
 	if !ok {
 		panic("key " + key + " not present in remove!")
@@ -238,7 +237,7 @@ func (c *Cache) run_hand_test() {
 	if meta.ptype == ptTest {
 
 		prev := c.hand_test.Prev()
-		c.meta_del(meta.key)
+		c.meta_del(c.hand_test)
 		c.hand_test = prev
 
 		c.count_test--
