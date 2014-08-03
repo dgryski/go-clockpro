@@ -76,64 +76,66 @@ func New(size int) *Cache {
 
 func (c *Cache) Get(key string) interface{} {
 
-	v := c.keys[key]
+	r := c.keys[key]
 
-	if v == nil {
+	if r == nil {
 		return nil
 	}
 
-	val := v.Value.(*entry)
+	mentry := r.Value.(*entry)
 
-	if val.val == nil {
+	if mentry.val == nil {
 		return nil
 	}
 
-	val.ref = true
-	return val.val
+	mentry.ref = true
+	return mentry.val
 }
 
 func (c *Cache) Set(key string, value interface{}) {
-	v := c.keys[key]
 
-	if v != nil {
+	r := c.keys[key]
 
-		val := v.Value.(*entry)
+	if r != nil {
 
-		if val.val == nil {
+		mentry := r.Value.(*entry)
+
+		if mentry.val == nil {
 			if c.mem_cold < c.mem_max {
 				c.mem_cold++
 			}
-			val.ref = false
-			val.val = value
-			val.ptype = ptHot
+			mentry.ref = false
+			mentry.val = value
+			mentry.ptype = ptHot
 			c.count_test--
-			c.meta_del(v)
-			c.meta_add(key, v)
+			c.meta_del(r)
+			c.meta_add(key, r)
 			c.count_hot++
 		} else {
-			val.val = value
-			val.ref = true
+			mentry.val = value
+			mentry.ref = true
 		}
 	} else {
-		e := &entry{ref: false, val: value, ptype: ptCold, key: key}
-		c.meta_add(key, &ring.Ring{Value: e})
+		r := &ring.Ring{Value: &entry{ref: false, val: value, ptype: ptCold, key: key}}
+		c.meta_add(key, r)
 		c.count_cold++
 	}
 }
 
-func (c *Cache) meta_add(key string, elt *ring.Ring) {
+func (c *Cache) meta_add(key string, r *ring.Ring) {
 
 	c.evict()
 
-	c.keys[key] = elt
+	c.keys[key] = r
+
 	if c.data == nil {
 		// first element
-		c.data = elt
-		c.hand_hot = elt
-		c.hand_cold = elt
-		c.hand_test = elt
+		c.data = r
+		c.hand_hot = r
+		c.hand_cold = r
+		c.hand_test = r
 	} else {
-		elt.Link(c.hand_hot)
+		r.Link(c.hand_hot)
 
 		if c.hand_cold == c.hand_hot {
 			c.hand_cold = c.hand_cold.Prev()
@@ -141,31 +143,23 @@ func (c *Cache) meta_add(key string, elt *ring.Ring) {
 	}
 }
 
-func (c *Cache) meta_del(elt *ring.Ring) {
+func (c *Cache) meta_del(r *ring.Ring) {
 
-	key := elt.Value.(*entry).key
+	delete(c.keys, r.Value.(*entry).key)
 
-	_, ok := c.keys[key]
-
-	if !ok {
-		panic("key " + key + " not present in remove!")
-	}
-
-	delete(c.keys, key)
-
-	if elt == c.hand_hot {
+	if r == c.hand_hot {
 		c.hand_hot = c.hand_hot.Prev()
 	}
 
-	if elt == c.hand_cold {
+	if r == c.hand_cold {
 		c.hand_cold = c.hand_cold.Prev()
 	}
 
-	if elt == c.hand_test {
+	if r == c.hand_test {
 		c.hand_test = c.hand_test.Prev()
 	}
 
-	elt.Prev().Unlink(1)
+	r.Prev().Unlink(1)
 }
 
 func (c *Cache) evict() {
@@ -177,18 +171,18 @@ func (c *Cache) evict() {
 
 func (c *Cache) run_hand_cold() {
 
-	meta := c.hand_cold.Value.(*entry)
+	mentry := c.hand_cold.Value.(*entry)
 
-	if meta.ptype == ptCold {
+	if mentry.ptype == ptCold {
 
-		if meta.ref {
-			meta.ptype = ptHot
-			meta.ref = false
+		if mentry.ref {
+			mentry.ptype = ptHot
+			mentry.ref = false
 			c.count_cold--
 			c.count_hot++
 		} else {
-			meta.ptype = ptTest
-			meta.val = nil
+			mentry.ptype = ptTest
+			mentry.val = nil
 			c.count_cold--
 			c.count_test++
 			for c.mem_max < c.count_test {
@@ -210,14 +204,14 @@ func (c *Cache) run_hand_hot() {
 		c.run_hand_test()
 	}
 
-	meta := c.hand_hot.Value.(*entry)
+	mentry := c.hand_hot.Value.(*entry)
 
-	if meta.ptype == ptHot {
+	if mentry.ptype == ptHot {
 
-		if meta.ref {
-			meta.ref = false
+		if mentry.ref {
+			mentry.ref = false
 		} else {
-			meta.ptype = ptCold
+			mentry.ptype = ptCold
 			c.count_hot--
 			c.count_cold++
 		}
@@ -232,9 +226,9 @@ func (c *Cache) run_hand_test() {
 		c.run_hand_cold()
 	}
 
-	meta := c.hand_test.Value.(*entry)
+	mentry := c.hand_test.Value.(*entry)
 
-	if meta.ptype == ptTest {
+	if mentry.ptype == ptTest {
 
 		prev := c.hand_test.Prev()
 		c.meta_del(c.hand_test)
