@@ -55,9 +55,9 @@ type Cache struct {
 	data     *ring.Ring
 	keys     map[string]*ring.Ring
 
-	hand_pos_hot  *ring.Ring
-	hand_pos_cold *ring.Ring
-	hand_pos_test *ring.Ring
+	hand_hot  *ring.Ring
+	hand_cold *ring.Ring
+	hand_test *ring.Ring
 
 	count_hot  int
 	count_cold int
@@ -129,16 +129,16 @@ func (c *Cache) meta_add(mentry *entry) {
 		elt := &ring.Ring{Value: mentry}
 		c.data = elt
 		c.keys[mentry.key] = elt
-		c.hand_pos_hot = elt
-		c.hand_pos_cold = elt
-		c.hand_pos_test = elt
+		c.hand_hot = elt
+		c.hand_cold = elt
+		c.hand_test = elt
 	} else {
 		elt := &ring.Ring{Value: mentry}
 		c.keys[mentry.key] = elt
-		elt.Link(c.hand_pos_hot)
+		elt.Link(c.hand_hot)
 
-		if c.hand_pos_cold == c.hand_pos_hot {
-			c.hand_pos_cold = c.hand_pos_cold.Prev()
+		if c.hand_cold == c.hand_hot {
+			c.hand_cold = c.hand_cold.Prev()
 		}
 	}
 }
@@ -153,16 +153,16 @@ func (c *Cache) meta_del(key string) {
 
 	delete(c.keys, key)
 
-	if elt == c.hand_pos_hot {
-		c.hand_pos_hot = c.hand_pos_hot.Prev()
+	if elt == c.hand_hot {
+		c.hand_hot = c.hand_hot.Prev()
 	}
 
-	if elt == c.hand_pos_cold {
-		c.hand_pos_cold = c.hand_pos_cold.Prev()
+	if elt == c.hand_cold {
+		c.hand_cold = c.hand_cold.Prev()
 	}
 
-	if elt == c.hand_pos_test {
-		c.hand_pos_test = c.hand_pos_test.Prev()
+	if elt == c.hand_test {
+		c.hand_test = c.hand_test.Prev()
 	}
 
 	elt.Prev().Unlink(1)
@@ -171,13 +171,13 @@ func (c *Cache) meta_del(key string) {
 func (c *Cache) evict() {
 
 	for c.mem_max <= c.count_hot+c.count_cold {
-		c.hand_cold()
+		c.run_hand_cold()
 	}
 }
 
-func (c *Cache) hand_cold() {
+func (c *Cache) run_hand_cold() {
 
-	meta := c.hand_pos_cold.Value.(*entry)
+	meta := c.hand_cold.Value.(*entry)
 
 	if meta.ptype == ptCold {
 
@@ -192,25 +192,25 @@ func (c *Cache) hand_cold() {
 			c.count_cold--
 			c.count_test++
 			for c.mem_max < c.count_test {
-				c.hand_test()
+				c.run_hand_test()
 			}
 		}
 	}
 
-	c.hand_pos_cold = c.hand_pos_cold.Next()
+	c.hand_cold = c.hand_cold.Next()
 
 	for c.mem_max-c.mem_cold < c.count_hot {
-		c.hand_hot()
+		c.run_hand_hot()
 	}
 }
 
-func (c *Cache) hand_hot() {
+func (c *Cache) run_hand_hot() {
 
-	if c.hand_pos_hot == c.hand_pos_test {
-		c.hand_test()
+	if c.hand_hot == c.hand_test {
+		c.run_hand_test()
 	}
 
-	meta := c.hand_pos_hot.Value.(*entry)
+	meta := c.hand_hot.Value.(*entry)
 
 	if meta.ptype == ptHot {
 
@@ -223,22 +223,22 @@ func (c *Cache) hand_hot() {
 		}
 	}
 
-	c.hand_pos_hot = c.hand_pos_hot.Next()
+	c.hand_hot = c.hand_hot.Next()
 }
 
-func (c *Cache) hand_test() {
+func (c *Cache) run_hand_test() {
 
-	if c.hand_pos_test == c.hand_pos_cold {
-		c.hand_cold()
+	if c.hand_test == c.hand_cold {
+		c.run_hand_cold()
 	}
 
-	meta := c.hand_pos_test.Value.(*entry)
+	meta := c.hand_test.Value.(*entry)
 
 	if meta.ptype == ptTest {
 
-		prev := c.hand_pos_test.Prev()
+		prev := c.hand_test.Prev()
 		c.meta_del(meta.key)
-		c.hand_pos_test = prev
+		c.hand_test = prev
 
 		c.count_test--
 		if c.mem_cold > 1 {
@@ -246,7 +246,7 @@ func (c *Cache) hand_test() {
 		}
 	}
 
-	c.hand_pos_test = c.hand_pos_test.Next()
+	c.hand_test = c.hand_test.Next()
 }
 
 func (c *Cache) dump() {
@@ -258,15 +258,15 @@ func (c *Cache) dump() {
 		end = c.data
 		m := elt.Value.(*entry)
 
-		if c.hand_pos_hot == elt {
+		if c.hand_hot == elt {
 			b = append(b, '2')
 		}
 
-		if c.hand_pos_test == elt {
+		if c.hand_test == elt {
 			b = append(b, '0')
 		}
 
-		if c.hand_pos_cold == elt {
+		if c.hand_cold == elt {
 			b = append(b, '1')
 		}
 
