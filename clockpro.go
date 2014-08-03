@@ -96,30 +96,34 @@ func (c *Cache) Set(key string, value interface{}) {
 
 	r := c.keys[key]
 
-	if r != nil {
-
-		mentry := r.Value.(*entry)
-
-		if mentry.val == nil {
-			if c.mem_cold < c.mem_max {
-				c.mem_cold++
-			}
-			mentry.ref = false
-			mentry.val = value
-			mentry.ptype = ptHot
-			c.count_test--
-			c.meta_del(r)
-			c.meta_add(key, r)
-			c.count_hot++
-		} else {
-			mentry.val = value
-			mentry.ref = true
-		}
-	} else {
-		r := &ring.Ring{Value: &entry{ref: false, val: value, ptype: ptCold, key: key}}
+	if r == nil {
+		// no cache entry?  add it
+		r = &ring.Ring{Value: &entry{ref: false, val: value, ptype: ptCold, key: key}}
 		c.meta_add(key, r)
 		c.count_cold++
+		return
 	}
+
+	mentry := r.Value.(*entry)
+
+	if mentry.val != nil {
+		// cache entry was a hot or cold page
+		mentry.val = value
+		mentry.ref = true
+		return
+	}
+
+	// cache entry was a test page
+	if c.mem_cold < c.mem_max {
+		c.mem_cold++
+	}
+	mentry.ref = false
+	mentry.val = value
+	mentry.ptype = ptHot
+	c.count_test--
+	c.meta_del(r)
+	c.meta_add(key, r)
+	c.count_hot++
 }
 
 func (c *Cache) meta_add(key string, r *ring.Ring) {
