@@ -42,7 +42,7 @@ func (p pageType) String() string {
 	return "unknown"
 }
 
-type metaEntry struct {
+type entry struct {
 	ptype pageType
 	key   string
 	val   interface{}
@@ -52,8 +52,8 @@ type metaEntry struct {
 type Cache struct {
 	mem_max  int
 	mem_cold int
-	meta     *ring.Ring
-	metaKeys map[string]*ring.Ring
+	data     *ring.Ring
+	keys     map[string]*ring.Ring
 
 	hand_pos_hot  *ring.Ring
 	hand_pos_cold *ring.Ring
@@ -68,20 +68,20 @@ func New(size int) *Cache {
 	return &Cache{
 		mem_max:  size,
 		mem_cold: size,
-		metaKeys: make(map[string]*ring.Ring),
+		keys:     make(map[string]*ring.Ring),
 	}
 
 }
 
 func (c *Cache) Get(key string) interface{} {
 
-	v := c.metaKeys[key]
+	v := c.keys[key]
 
 	if v == nil {
 		return nil
 	}
 
-	val := v.Value.(*metaEntry)
+	val := v.Value.(*entry)
 
 	if val.val == nil {
 		return nil
@@ -92,11 +92,11 @@ func (c *Cache) Get(key string) interface{} {
 }
 
 func (c *Cache) Set(key string, value interface{}) {
-	v := c.metaKeys[key]
+	v := c.keys[key]
 
 	if v != nil {
 
-		val := v.Value.(*metaEntry)
+		val := v.Value.(*entry)
 
 		if val.val == nil {
 			if c.mem_cold < c.mem_max {
@@ -114,27 +114,27 @@ func (c *Cache) Set(key string, value interface{}) {
 			val.ref = true
 		}
 	} else {
-		e := &metaEntry{ref: false, val: value, ptype: ptCold, key: key}
+		e := &entry{ref: false, val: value, ptype: ptCold, key: key}
 		c.meta_add(e)
 		c.count_cold++
 	}
 }
 
-func (c *Cache) meta_add(mentry *metaEntry) {
+func (c *Cache) meta_add(mentry *entry) {
 
 	c.evict()
 
-	if c.meta == nil {
+	if c.data == nil {
 		// first element
 		elt := &ring.Ring{Value: mentry}
-		c.meta = elt
-		c.metaKeys[mentry.key] = elt
+		c.data = elt
+		c.keys[mentry.key] = elt
 		c.hand_pos_hot = elt
 		c.hand_pos_cold = elt
 		c.hand_pos_test = elt
 	} else {
 		elt := &ring.Ring{Value: mentry}
-		c.metaKeys[mentry.key] = elt
+		c.keys[mentry.key] = elt
 		elt.Link(c.hand_pos_hot)
 
 		if c.hand_pos_cold == c.hand_pos_hot {
@@ -145,13 +145,13 @@ func (c *Cache) meta_add(mentry *metaEntry) {
 
 func (c *Cache) meta_del(key string) {
 
-	elt, ok := c.metaKeys[key]
+	elt, ok := c.keys[key]
 
 	if !ok {
 		panic("key " + key + " not present in remove!")
 	}
 
-	delete(c.metaKeys, key)
+	delete(c.keys, key)
 
 	if elt == c.hand_pos_hot {
 		c.hand_pos_hot = c.hand_pos_hot.Prev()
@@ -177,7 +177,7 @@ func (c *Cache) evict() {
 
 func (c *Cache) hand_cold() {
 
-	meta := c.hand_pos_cold.Value.(*metaEntry)
+	meta := c.hand_pos_cold.Value.(*entry)
 
 	if meta.ptype == ptCold {
 
@@ -210,7 +210,7 @@ func (c *Cache) hand_hot() {
 		c.hand_test()
 	}
 
-	meta := c.hand_pos_hot.Value.(*metaEntry)
+	meta := c.hand_pos_hot.Value.(*entry)
 
 	if meta.ptype == ptHot {
 
@@ -232,7 +232,7 @@ func (c *Cache) hand_test() {
 		c.hand_cold()
 	}
 
-	meta := c.hand_pos_test.Value.(*metaEntry)
+	meta := c.hand_pos_test.Value.(*entry)
 
 	if meta.ptype == ptTest {
 
@@ -254,9 +254,9 @@ func (c *Cache) dump() {
 	var b []byte
 
 	var end *ring.Ring = nil
-	for elt := c.meta; elt != end; elt = elt.Next() {
-		end = c.meta
-		m := elt.Value.(*metaEntry)
+	for elt := c.data; elt != end; elt = elt.Next() {
+		end = c.data
+		m := elt.Value.(*entry)
 
 		if c.hand_pos_hot == elt {
 			b = append(b, '2')
