@@ -16,10 +16,7 @@ It is MIT licensed, like the original.
 */
 package clockpro
 
-import (
-	"container/ring"
-	"fmt"
-)
+import "container/ring"
 
 type pageType int
 
@@ -243,7 +240,7 @@ func (c *Cache) run_hand_test() {
 	c.hand_test = c.hand_test.Next()
 }
 
-func (c *Cache) dump() {
+func (c *Cache) dump() string {
 
 	var b []byte
 
@@ -282,5 +279,5 @@ func (c *Cache) dump() {
 		}
 	}
 
-	fmt.Println(string(b))
+	return string(b)
 }
