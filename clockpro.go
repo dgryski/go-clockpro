@@ -53,7 +53,6 @@ type entry struct {
 type Cache struct {
 	mem_max  int
 	mem_cold int
-	data     *ring.Ring
 	keys     map[string]*ring.Ring
 
 	hand_hot  *ring.Ring
@@ -71,7 +70,6 @@ func New(size int) *Cache {
 		mem_cold: size,
 		keys:     make(map[string]*ring.Ring),
 	}
-
 }
 
 func (c *Cache) Get(key string) interface{} {
@@ -131,19 +129,17 @@ func (c *Cache) meta_add(key string, r *ring.Ring) {
 	c.evict()
 
 	c.keys[key] = r
+	r.Link(c.hand_hot)
 
-	if c.data == nil {
+	if c.hand_hot == nil {
 		// first element
-		c.data = r
 		c.hand_hot = r
 		c.hand_cold = r
 		c.hand_test = r
-	} else {
-		r.Link(c.hand_hot)
+	}
 
-		if c.hand_cold == c.hand_hot {
-			c.hand_cold = c.hand_cold.Prev()
-		}
+	if c.hand_cold == c.hand_hot {
+		c.hand_cold = c.hand_cold.Prev()
 	}
 }
 
@@ -252,8 +248,8 @@ func (c *Cache) dump() {
 	var b []byte
 
 	var end *ring.Ring = nil
-	for elt := c.data; elt != end; elt = elt.Next() {
-		end = c.data
+	for elt := c.hand_hot; elt != end; elt = elt.Next() {
+		end = c.hand_hot
 		m := elt.Value.(*entry)
 
 		if c.hand_hot == elt {
@@ -273,7 +269,6 @@ func (c *Cache) dump() {
 			if m.ref {
 				b = append(b, 'H')
 			} else {
-
 				b = append(b, 'h')
 			}
 		case ptCold:
@@ -284,7 +279,6 @@ func (c *Cache) dump() {
 			}
 		case ptTest:
 			b = append(b, 'n')
-
 		}
 	}
 
