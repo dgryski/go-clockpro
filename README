@@ -1,0 +1,3 @@
+go-clockpro: the CLOCK-Pro cache eviction algorithm
+
+godoc: http://godoc.org/github.com/dgryski/go-clockpro
